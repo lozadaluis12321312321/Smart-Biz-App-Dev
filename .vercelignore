@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+/vendor
+/node_modules
+/storage/logs/*
+/database/*.sqlite*
+/tests
+composer.phar
+*.zip
