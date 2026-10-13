@@ -42,7 +42,7 @@ class ManagementController extends Controller
     {
         return match ($resource) {
             'customers' => ['model' => Customer::class, 'title' => 'Customers', 'singular' => 'Customer', 'fields' => ['name' => 'Name', 'email' => 'Email', 'phone' => 'Contact number', 'address' => 'Address', 'birth_date' => 'Birth date']],
-            'products' => ['model' => Product::class, 'title' => 'Products', 'singular' => 'Product', 'fields' => ['code' => 'Product code', 'name' => 'Product name', 'brand' => 'Brand', 'category' => 'Category', 'frame_type' => 'Frame type', 'frame_shape' => 'Frame shape', 'frame_material' => 'Frame material', 'frame_color' => 'Frame color', 'frame_size' => 'Frame size', 'lens_type' => 'Lens type', 'lens_width' => 'Lens width (mm)', 'bridge_width' => 'Bridge width (mm)', 'temple_length' => 'Temple length (mm)', 'cost' => 'Cost price (PHP)', 'price' => 'Selling price (PHP)', 'reorder_level' => 'Reorder level', 'description' => 'Description']],
+            'products' => ['model' => Product::class, 'title' => 'Products', 'singular' => 'Product', 'fields' => ['name' => 'Product name', 'supplier_id' => 'Supplier', 'brand' => 'Brand', 'category' => 'Category', 'frame_type' => 'Frame type', 'frame_shape' => 'Frame shape', 'frame_material' => 'Frame material', 'frame_color' => 'Frame color', 'frame_size' => 'Frame size', 'lens_type' => 'Lens type', 'lens_width' => 'Lens width (mm)', 'bridge_width' => 'Bridge width (mm)', 'temple_length' => 'Temple length (mm)', 'cost' => 'Cost price (PHP)', 'price' => 'Selling price (PHP)', 'reorder_level' => 'Reorder level', 'description' => 'Description']],
             'suppliers' => ['model' => Supplier::class, 'title' => 'Suppliers', 'singular' => 'Supplier', 'fields' => ['name' => 'Supplier name', 'contact_person' => 'Contact person', 'email' => 'Email', 'phone' => 'Contact number', 'address' => 'Address']],
             'users' => ['model' => User::class, 'title' => 'User Management', 'singular' => 'User', 'fields' => ['name' => 'Full name', 'email' => 'Email', 'phone' => 'Contact number', 'role' => 'Role', 'password' => 'Password']],
             default => abort(404),
@@ -62,7 +62,10 @@ class ManagementController extends Controller
         $spec = $this->resource($resource);
         $q = $spec['model']::query();
         if ($resource === 'products') {
-            $q->with('stock');
+            $q->with('stock', 'supplier');
+        }
+        if ($resource === 'suppliers') {
+            Supplier::syncActivity();
         }
         if ($resource === 'users') {
             $q->whereIn('role', ['Admin', 'Staff']);
@@ -86,7 +89,63 @@ class ManagementController extends Controller
             abort_unless(in_array($record->role, ['Admin', 'Staff']), 404);
         }
 
-        return view('manage.form', compact('spec', 'resource', 'record'));
+        return view('manage.form', [
+            'spec' => $spec, 'resource' => $resource, 'record' => $record,
+            'suppliers' => $resource === 'products' ? Supplier::where('active', true)->orWhere('id', $record->supplier_id)->orderBy('name')->get() : collect(),
+            'supplierProducts' => $resource === 'suppliers' && $record->exists ? Product::with('stock')->where('supplier_id', $record->id)->orderBy('name')->get() : collect(),
+            'otherProducts' => $resource === 'suppliers' && $record->exists ? Product::with('supplier')->where('active', true)->where(fn ($q) => $q->whereNull('supplier_id')->orWhere('supplier_id', '!=', $record->id))->orderBy('category')->orderBy('name')->get() : collect(),
+            // Per-supplier inventory lets Admin see what a supplier already provides and clone a product as a template.
+            'supplierInventory' => $resource === 'products' ? Product::with('stock')->whereNotNull('supplier_id')->where('id', '!=', $record->id ?? 0)->orderBy('name')->get()->map(fn ($p) => ['id' => $p->id, 'supplier_id' => $p->supplier_id, 'code' => $p->code, 'name' => $p->name, 'image' => asset($p->image ?: 'assets/frames-1.svg'), 'available' => $p->available, 'detail' => implode(' · ', array_filter([$p->category, $p->frame_shape, $p->frame_color, $p->frame_material, $p->frame_size])), 'fields' => ['brand' => $p->brand, 'category' => $p->category, 'frame_type' => $p->frame_type, 'frame_shape' => $p->frame_shape, 'frame_material' => $p->frame_material, 'frame_color' => $p->frame_color, 'frame_size' => $p->frame_size, 'lens_type' => $p->lens_type, 'lens_width' => $p->lens_width, 'bridge_width' => $p->bridge_width, 'temple_length' => $p->temple_length, 'cost' => number_format($p->cost_cents / 100, 2, '.', ''), 'price' => number_format($p->price_cents / 100, 2, '.', ''), 'reorder_level' => $p->reorder_level, 'description' => $p->description]])->groupBy('supplier_id') : collect(),
+            'knownValues' => $resource === 'products' ? collect(['brand', 'frame_material', 'frame_color', 'lens_type', 'lens_width', 'bridge_width', 'temple_length'])->mapWithKeys(fn ($f) => [$f => Product::whereNotNull($f)->where($f, '!=', '')->distinct()->orderBy($f)->pluck($f)]) : collect(),
+        ]);
+    }
+
+    // Tick the eyewear a supplier provides (or remove one); this is what their purchase orders can contain.
+    public function supplierProducts(Request $r, Supplier $supplier)
+    {
+        $d = $r->validate(['action' => ['required', Rule::in(['assign', 'remove'])], 'products' => 'required_if:action,assign|array|max:200', 'products.*' => 'integer|exists:products,id', 'product_id' => 'required_if:action,remove|nullable|integer|exists:products,id']);
+        if ($d['action'] === 'assign') {
+            $count = Product::whereIn('id', $d['products'] ?? [])->update(['supplier_id' => $supplier->id]);
+            $supplier->touchActivity();
+            TransactionLog::record('Supplier products assigned', $supplier->name.' · '.$count.' product(s)');
+
+            return back()->with('success', $count.' product'.($count === 1 ? '' : 's').' now supplied by '.$supplier->name.'. Enter quantities below to order.');
+        }
+        Product::where('supplier_id', $supplier->id)->whereKey($d['product_id'])->update(['supplier_id' => null]);
+
+        return back()->with('success', 'Product removed from '.$supplier->name.'. Assign it to another supplier to restock it.');
+    }
+
+    // Order eyewear straight from the supplier page; the purchase order feeds Stock Management when received.
+    public function supplierOrder(Request $r, Supplier $supplier, ShopService $shop)
+    {
+        $d = $r->validate(['quantities' => 'required|array', 'quantities.*' => 'nullable|integer|min:0|max:10000', 'receive_now' => 'nullable|boolean', 'remarks' => 'nullable|string|max:1000']);
+        $products = Product::where('supplier_id', $supplier->id)->where('active', true)->whereIn('id', array_keys($d['quantities']))->get()->keyBy('id');
+        $items = collect($d['quantities'])->filter(fn ($q, $id) => (int) $q > 0 && isset($products[$id]))->map(fn ($q, $id) => ['product_id' => (int) $id, 'quantity' => (int) $q, 'unit_cost' => number_format($products[$id]->cost_cents / 100, 2, '.', '')])->values()->all();
+        if (! $items) {
+            throw ValidationException::withMessages(['quantities' => 'Enter a quantity for at least one product.']);
+        }
+        $po = $shop->purchase(['supplier_id' => $supplier->id, 'order_date' => today()->toDateString(), 'items' => $items, 'remarks' => $d['remarks'] ?? 'Ordered from the supplier page.'], $r->user());
+        if ($d['receive_now'] ?? false) {
+            $shop->purchaseStatus($po, 'approve', $r->user());
+            $shop->purchaseStatus($po, 'order', $r->user());
+            $shop->receive($po, $po->items()->get()->mapWithKeys(fn ($i) => [$i->id => $i->quantity])->all(), $r->user());
+
+            return redirect()->route('purchases.show', $po)->with('success', $po->number.' received. Stock Management has been updated.');
+        }
+
+        return redirect()->route('purchases.show', $po)->with('success', $po->number.' created. Approve, mark as ordered, then receive it to add stock.');
+    }
+
+    // Philippine mobile or landline: 09XX XXX XXXX, +63 9XX XXX XXXX, (02) 8XXX XXXX.
+    public static function phoneRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) {
+            $digits = preg_replace('/[\s\-().]/', '', (string) $value);
+            if (! preg_match('/^(09\d{9}|\+639\d{9}|0[2-8]\d{7,8}|\+63[2-8]\d{7,8})$/', $digits)) {
+                $fail('Enter a valid Philippine contact number, e.g. 0917 123 4567 or +63 917 123 4567.');
+            }
+        };
     }
 
     public function save(Request $r, string $resource, ?int $id = null)
@@ -103,8 +162,12 @@ class ManagementController extends Controller
                 $rules[$field] = 'nullable|string|max:255';
             }
         }
+        // Every contact record needs a reachable email and a correctly formatted PH number.
         if (isset($rules['email'])) {
-            $rules['email'] = 'nullable|email|max:150';
+            $rules['email'] = ['required', 'email:rfc', 'max:150'];
+        }
+        if (isset($rules['phone'])) {
+            $rules['phone'] = ['required', 'string', 'max:30', self::phoneRule()];
         }
         foreach (['address', 'description'] as $field) {
             if (isset($rules[$field])) {
@@ -113,16 +176,19 @@ class ManagementController extends Controller
         }
         if ($resource === 'customers') {
             $rules['birth_date'] = 'nullable|date_format:Y-m-d|after_or_equal:1900-01-01|before_or_equal:today';
+            if ($record->user_id) {
+                $rules['email'] = 'nullable';
+            }
         }
         if ($resource === 'products') {
-            $rules['code'] = ['required', 'string', 'max:50', Rule::unique('products', 'code')->ignore($id)];
-            $rules['category'] = ['required', Rule::in(['Eyeglass Frame', 'Contact Lenses & Solution', 'Reading Glasses', 'Sunglasses', 'Lens', 'Accessory'])];
+            $rules['supplier_id'] = ['required', 'integer', Rule::exists('suppliers', 'id')->where(fn ($q) => $q->where('active', true)->orWhere('id', $record->supplier_id))];
+            $rules['category'] = ['required', Rule::in(array_keys(Product::CATEGORIES))];
             $rules['reorder_level'] = 'required|integer|min:0|max:10000';
             $rules['cost'] = $rules['price'] = 'required|numeric|min:0|max:99999999.99';
             $rules['image'] = 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048';
         }
         if ($resource === 'users') {
-            $rules['email'] = ['required', 'email', 'max:150', Rule::unique('users', 'email')->ignore($id)];
+            $rules['email'] = ['required', 'email:rfc', 'max:150', Rule::unique('users', 'email')->ignore($id)];
             $rules['password'] = ($id ? 'nullable' : 'required').'|string|min:8|max:100';
             $rules['role'] = ['required', Rule::in(['Admin', 'Staff'])];
         }
@@ -155,6 +221,13 @@ class ManagementController extends Controller
                 $data['email'] = $record->user->email;
                 $record->user->update(['name' => $data['name'], 'phone' => $data['phone'] ?? null, 'active' => $data['active']]);
             }
+            if ($resource === 'products' && ! $record->exists) {
+                $data['code'] = Product::generateCode($data['category']);
+            }
+            if ($resource === 'suppliers') {
+                // Saving a supplier counts as activity and reactivates an auto-inactivated record.
+                $data['last_activity_at'] = now();
+            }
             $record->fill($data)->save();
             if ($resource === 'products') {
                 StockManagement::firstOrCreate(['product_id' => $record->id]);
@@ -167,9 +240,13 @@ class ManagementController extends Controller
 
     public function stock(Request $r)
     {
-        $q = Product::with('stock.updatedBy');
+        $q = Product::with('stock.updatedBy', 'supplier');
         if ($r->query('search')) {
-            $q->where('name', 'like', '%'.substr($r->query('search'), 0, 100).'%');
+            $term = '%'.substr($r->query('search'), 0, 100).'%';
+            $q->where(fn ($w) => $w->where('name', 'like', $term)->orWhere('code', 'like', $term)->orWhereHas('supplier', fn ($s) => $s->where('name', 'like', $term)));
+        }
+        if ($r->query('supplier')) {
+            $q->where('supplier_id', (int) $r->query('supplier'));
         }
         if ($r->query('low')) {
             $q->whereHas('stock', fn ($s) => $s->whereRaw('on_hand - reserved <= products.reorder_level'));

@@ -58,6 +58,8 @@ Route::prefix('manage')->middleware('role:Admin,Staff')->group(function () {
         Route::get('/purchases/{purchase}', [Tx::class, 'purchase'])->name('purchases.show');
         Route::post('/purchases/{purchase}/status', [Tx::class, 'purchaseStatus'])->name('purchases.status');
         Route::post('/purchases/{purchase}/receive', [Tx::class, 'receive'])->name('purchases.receive');
+        Route::post('/records/suppliers/{supplier}/order', [Manage::class, 'supplierOrder'])->name('supplier.order');
+        Route::post('/records/suppliers/{supplier}/products', [Manage::class, 'supplierProducts'])->name('supplier.products');
         Route::post('/stock/{product}/adjust', [Manage::class, 'adjust'])->name('stock.adjust');
         Route::post('/payments/{payment}/void', [Tx::class, 'void'])->name('payments.void');
         Route::get('/reports', [Manage::class, 'reports'])->name('reports');

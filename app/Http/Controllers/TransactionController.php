@@ -28,7 +28,9 @@ class TransactionController extends Controller
 
     public function purchaseForm()
     {
-        return view('purchases.create', ['suppliers' => Supplier::where('active', true)->orderBy('name')->get(), 'products' => Product::where('active', true)->orderBy('name')->get()]);
+        Supplier::syncActivity();
+
+        return view('purchases.create', ['suppliers' => Supplier::where('active', true)->withCount('products')->orderBy('name')->get(), 'products' => Product::where('active', true)->whereNotNull('supplier_id')->orderBy('name')->get()]);
     }
 
     public function createPurchase(Request $r, ShopService $shop)

@@ -41,12 +41,15 @@ class ShopService
     {
         return DB::transaction(function () use ($data, $actor) {
             $this->check($actor->role === 'Admin', 'Only Admin can create purchases.');
-            $this->check(Supplier::whereKey($data['supplier_id'])->where('active', true)->exists(), 'Choose an active supplier.');
+            $supplier = Supplier::whereKey($data['supplier_id'])->where('active', true)->lockForUpdate()->first();
+            $this->check((bool) $supplier, 'Choose an active supplier.');
             $lines = [];
             $subtotal = 0;
             foreach ($data['items'] as $line) {
                 $product = Product::whereKey($line['product_id'])->where('active', true)->first();
                 $this->check((bool) $product, 'A selected product is unavailable.');
+                // Purchase orders only carry the products this supplier actually provides.
+                $this->check($product->supplier_id === $supplier->id, $product->name.' is not supplied by '.$supplier->name.'.');
                 $this->check(! isset($lines[$product->id]), 'Select each product only once.');
                 $quantity = (int) $line['quantity'];
                 $cost = Money::cents($line['unit_cost']);
@@ -62,6 +65,7 @@ class ShopService
             $po = PurchaseOrder::create(['supplier_id' => $data['supplier_id'], 'user_id' => $actor->id, 'order_date' => $data['order_date'], 'expected_date' => $data['expected_date'] ?? null, 'subtotal_cents' => $subtotal, 'discount_cents' => $discount, 'shipping_cents' => $shipping, 'total_cents' => $subtotal - $discount + $shipping, 'remarks' => $data['remarks'] ?? null]);
             $po->update(['number' => sprintf('PO-%06d', $po->id)]);
             $po->items()->createMany(array_values($lines));
+            $supplier->touchActivity();
             TransactionLog::record('Purchase created', $po->number, $actor->id);
 
             return $po;
@@ -113,6 +117,7 @@ class ShopService
             $this->check($receivedTotal > 0, 'Enter at least one quantity received.');
             $complete = ! $po->items()->whereColumn('received', '<', 'quantity')->exists();
             $po->update(['status' => $complete ? 'Received' : 'Partially Received', 'received_date' => $complete ? today()->toDateString() : null]);
+            $po->supplier->touchActivity();
             TransactionLog::record('Delivery received', $po->number, $actor->id);
             if ($requestKey) {
                 $po->update(['receipt_keys' => [...($po->receipt_keys ?? []), $requestKey]]);
