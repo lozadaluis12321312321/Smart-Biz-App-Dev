@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One Optics Clinic — Motion Graphics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a1828;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Outfit', sans-serif;
+      color: #e2edf8;
+      gap: 20px;
+      padding: 20px;
+    }
+    h1 { font-size: 14px; font-weight: 500; color: #5b88b0; letter-spacing: .08em; }
+    #canvas-wrap {
+      position: relative;
+      box-shadow: 0 30px 100px #000a;
+      border-radius: 8px;
+      overflow: hidden;
+      max-width: 100%;
+    }
+    canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: 1px solid #2d5f91;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    #btn-play {
+      background: #176ec4;
+      color: white;
+      border-color: #176ec4;
+    }
+    #btn-play:hover { background: #10539a; }
+    #btn-record {
+      background: transparent;
+      color: #a8c8e8;
+      border-color: #2d5f91;
+    }
+    #btn-record:hover { background: #1a3a5c; }
+    #btn-record.recording {
+      background: #7c2020;
+      color: white;
+      border-color: #7c2020;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+    #status {
+      font-size: 12px;
+      color: #7a96b2;
+      min-height: 18px;
+      text-align: center;
+    }
+    .progress-bar {
+      width: min(960px, 90vw);
+      height: 3px;
+      background: #1a3a5c;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #176ec4, #22a3e0);
+      width: 0%;
+      transition: width .1s linear;
+      border-radius: 2px;
+    }
+    .tip {
+      font-size: 11px;
+      color: #4a6a8a;
+      max-width: 500px;
+      text-align: center;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+<h1>ONE OPTICS CLINIC &mdash; 25-SECOND PROMO</h1>
+
+<div id="canvas-wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+
+<div class="controls">
+  <button id="btn-play">&#9654; Play Animation</button>
+  <button id="btn-record">&#9210; Record &amp; Download</button>
+</div>
+<p id="status">25-second motion graphics promo &middot; 960&times;540 &middot; 30fps</p>
+<p class="tip">Click <strong style="color:#a8c8e8">Record &amp; Download</strong> to capture the animation as a <code>.webm</code> video file. Open in VLC or convert with ffmpeg/Handbrake to MP4.</p>
+
+<script>
+/* ── One Optics Clinic – 25s Motion Graphics ── */
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 960, H = 540;
+const DURATION = 25000;
+
+let startTime = null, animId = null;
+
+/* ── Easing ── */
+const easeOut   = t => 1 - Math.pow(1-t,3);
+const easeInOut = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+const spring    = t => {
+  if(t<=0)return 0; if(t>=1)return 1;
+  return Math.pow(2,-10*t)*Math.sin((t-.075)*(2*Math.PI)/.3)*-1+1;
+};
+
+/* ── Palette ── */
+const NAVY='#122639', INK='#173049', TEAL='#176ec4', CREAM='#d9eaf8', MUTED='#587999';
+
+/* ── Particles ── */
+class Dot {
+  constructor(){ this.reset(true); }
+  reset(init){
+    this.x=Math.random()*W; this.y=init?Math.random()*H:H+5;
+    this.r=Math.random()*1.6+.5; this.vy=-(Math.random()*.5+.15);
+    this.vx=(Math.random()-.5)*.25; this.a=Math.random()*.35+.08;
+    this.life=0; this.ml=Math.random()*250+150;
+  }
+  tick(){ this.x+=this.vx; this.y+=this.vy; this.life++;
+    if(this.life>this.ml||this.y<-5) this.reset(false); }
+  draw(){
+    ctx.save(); ctx.globalAlpha=this.a*Math.sin(Math.PI*this.life/this.ml);
+    ctx.fillStyle=TEAL; ctx.beginPath(); ctx.arc(this.x,this.y,this.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+const dots = Array.from({length:70},()=>new Dot());
+
+/* ── Utils ── */
+function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+function revealText(txt,x,y,font,color,p,align='left'){
+  if(p<=0)return; ctx.save();
+  const lh=parseInt(font)*1.5;
+  ctx.beginPath(); ctx.rect(align==='center'?x-500:x-4, y-lh, 820, lh+8); ctx.clip();
+  const dy=(1-easeOut(Math.min(1,p)))*28;
+  ctx.font=font; ctx.fillStyle=color; ctx.textAlign=align;
+  ctx.globalAlpha=Math.min(1,p*1.8); ctx.fillText(txt,x,y+dy); ctx.restore();
+}
+
+function lineGrow(x1,y1,x2,y2,color,p,lw=1){
+  if(p<=0)return; ctx.save();
+  ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.globalAlpha=.7;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x1+(x2-x1)*easeOut(p),y1+(y2-y1)*easeOut(p)); ctx.stroke();
+  ctx.restore();
+}
+
+function arcGrow(cx,cy,r,color,p,lw=1,a=.25){
+  if(p<=0)return; ctx.save();
+  ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.globalAlpha=a;
+  ctx.beginPath(); ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.PI*2*easeOut(p)); ctx.stroke();
+  ctx.restore();
+}
+
+/* ── Eyewear Shapes ── */
+function glasses(cx,cy,sc,a,color='#173049',shape='round'){
+  ctx.save(); ctx.translate(cx,cy); ctx.scale(sc,sc);
+  ctx.globalAlpha=a; ctx.strokeStyle=color; ctx.lineWidth=3.5;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  if(shape==='round'){
+    ctx.beginPath(); ctx.arc(-48,0,34,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(48,0,34,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-14,-5); ctx.bezierCurveTo(-9,-11,9,-11,14,-5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-82,-3); ctx.lineTo(-108,4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(82,-3); ctx.lineTo(108,4); ctx.stroke();
+  } else if(shape==='rect'){
+    ctx.beginPath(); rr(-84,-25,62,50,7); ctx.stroke();
+    ctx.beginPath(); rr(22,-25,62,50,7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-22,-4); ctx.lineTo(22,-4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-84,-2); ctx.lineTo(-112,5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(84,-2); ctx.lineTo(112,5); ctx.stroke();
+  } else { /* cateye */
+    ctx.beginPath();
+    ctx.moveTo(-86,6); ctx.bezierCurveTo(-86,-18,-67,-36,-46,-33);
+    ctx.bezierCurveTo(-29,-30,-18,-10,-18,6); ctx.bezierCurveTo(-18,22,-36,32,-56,30);
+    ctx.bezierCurveTo(-73,28,-86,20,-86,6); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(18,6); ctx.bezierCurveTo(18,-18,37,-36,56,-33);
+    ctx.bezierCurveTo(73,-30,84,-10,84,6); ctx.bezierCurveTo(84,22,66,32,46,30);
+    ctx.bezierCurveTo(29,28,18,20,18,6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-18,-5); ctx.bezierCurveTo(-10,-13,10,-13,18,-5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-86,6); ctx.lineTo(-113,-1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(84,6); ctx.lineTo(113,-1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ── Scene helpers ── */
+const SCENES=[
+  {s:0,    e:4500},
+  {s:3800, e:9500},
+  {s:9000, e:14500},
+  {s:14000,e:19000},
+  {s:17500,e:22500},
+  {s:21500,e:25000},
+];
+function pt(idx,t){ const sc=SCENES[idx]; return Math.max(0,Math.min(1,(t-sc.s)/(sc.e-sc.s))); }
+function fadeA(idx,t,fr=.13){
+  const sc=SCENES[idx]; const dur=sc.e-sc.s; const loc=t-sc.s;
+  let a=1;
+  if(loc<dur*fr) a=loc/(dur*fr);
+  const fo=dur*(1-fr); if(loc>fo) a=1-(loc-fo)/(dur*fr);
+  return Math.max(0,Math.min(1,a));
+}
+
+/* ════════════════════════════════
+   SCENE 0  Brand Reveal
+════════════════════════════════ */
+function s0(t,a){
+  if(a<=0)return;
+  ctx.save(); ctx.globalAlpha=a;
+  /* bg */
+  const g=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,560);
+  g.addColorStop(0,'#1e4878'); g.addColorStop(1,'#0c1e30');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  const p=pt(0,t);
+  /* concentric rings */
+  for(let i=0;i<5;i++) arcGrow(W/2,H/2,70+i*70,TEAL,Math.max(0,p*2.5-i*.4),1,.05+i*.01);
+  /* glasses spring-in */
+  const gp=Math.max(0,(p-.08)/.5);
+  const gs=spring(Math.min(1,gp));
+  glasses(W/2,H/2-50,gs*1.3,Math.min(1,gp*2),'#c0d8f0','round');
+  /* brand name */
+  const tp=easeOut(Math.min(1,Math.max(0,(p-.52)/.35)));
+  ctx.font="700 44px 'Playfair Display'"; ctx.fillStyle='#ddeaf8';
+  ctx.textAlign='center'; ctx.globalAlpha=a*tp;
+  ctx.fillText('One Optics',W/2,H/2+44);
+  ctx.font="400 12px 'Outfit'"; ctx.fillStyle='#7aafd4';
+  ctx.globalAlpha=a*easeOut(Math.min(1,Math.max(0,(p-.68)/.25)));
+  ctx.fillText('C L I N I C',W/2,H/2+68);
+  /* divider */
+  lineGrow(W/2-90,H/2+80,W/2+90,H/2+80,TEAL,Math.max(0,(p-.8)/.18),1);
+  /* tagline */
+  revealText('YOUR NEIGHBORHOOD OPTICAL CLINIC · MANILA',W/2,H/2+104,"400 10px 'Outfit'",'#5b8ab8',Math.max(0,(p-.9)/.1),'center');
+  ctx.restore();
+}
+
+/* ════════════════════════════════
+   SCENE 1  Hero Headline
+════════════════════════════════ */
+function s1(t,a){
+  if(a<=0)return;
+  ctx.save(); ctx.globalAlpha=a;
+  const g=ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'#dce8f5'); g.addColorStop(1,'#c5d8ee');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  /* grid lines */
+  ctx.strokeStyle='#b8cee2'; ctx.lineWidth=.5;
+  for(let x=0;x<W;x+=55){ ctx.globalAlpha=a*.2; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  ctx.globalAlpha=a;
+  const p=pt(1,t);
+  /* circle blob */
+  const cb=easeInOut(Math.min(1,p*1.8));
+  const g2=ctx.createRadialGradient(W*.72,H*.45,0,W*.72,H*.45,230);
+  g2.addColorStop(0,'#bed6ee55'); g2.addColorStop(1,'transparent');
+  ctx.fillStyle=g2; ctx.globalAlpha=a*cb; ctx.fillRect(0,0,W,H); ctx.globalAlpha=a;
+  /* floating eyewear */
+  const fp=Math.max(0,(p-.05)/.5);
+  const fy=Math.sin(t/900)*9;
+  ctx.save(); ctx.translate(W*.73+(1-easeOut(Math.min(1,fp)))*80, H*.47+fy);
+  glasses(0,0,1.5,easeOut(Math.min(1,fp))*.72,'#173049','round'); ctx.restore();
+  /* eyebrow */
+  const ep=Math.max(0,p/.12);
+  lineGrow(58,145,86,145,TEAL,ep,1.5);
+  revealText('A FRESH PERSPECTIVE',94,150,"500 10px 'Outfit'",'#5c7e9f',ep);
+  /* headline */
+  const hp=Math.max(0,(p-.15)/.22);
+  revealText('See clearly.',60,222,"500 70px 'Playfair Display'",INK,hp);
+  ctx.font="italic 400 70px 'Playfair Display'"; ctx.fillStyle=TEAL; ctx.textAlign='left';
+  ctx.globalAlpha=a*easeOut(Math.min(1,Math.max(0,(hp-.1))));
+  revealText('Feel like you.',60,302,"italic 400 70px 'Playfair Display'",TEAL,Math.max(0,hp-.12));
+  /* body */
+  const bp=Math.max(0,(p-.48)/.28);
+  ['Discover frames that fit your face, your style,','and your everyday. Find your next pair at','One Optics Clinic — Manila.'].forEach((ln,i)=>{
+    revealText(ln,60,356+i*22,"400 13px 'Outfit'",'#5a7fa3',Math.max(0,bp-i*.1));
+  });
+  /* trust badges */
+  const tr=Math.max(0,(p-.78)/.18);
+  ['✓  Carefully selected frames','✓  Pickup or delivery available'].forEach((ln,i)=>{
+    revealText(ln,60,432+i*22,"400 11px 'Outfit'",'#4a7099',Math.max(0,tr-i*.1));
+  });
+  ctx.restore();
+}
+
+/* ════════════════════════════════
+   SCENE 2 & 3  Frame Showcase
+════════════════════════════════ */
+function sFrame(t,a,idx,shape,label,copy,accentColor){
+  if(a<=0)return;
+  const p=pt(idx,t);
+  ctx.save(); ctx.globalAlpha=a;
+  /* bg */
+  const bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,idx===2?'#e4eef8':'#e0edf7');
+  bg.addColorStop(1,idx===2?'#ccdef0':'#d8e9f5');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  /* big number bg */
+  ctx.font="700 260px 'Outfit'"; ctx.fillStyle='#bacfe3';
+  ctx.textAlign='right'; ctx.globalAlpha=a*.18;
+  ctx.fillText(`0${idx-1}`,W-10,H+10); ctx.globalAlpha=a;
+  /* circles */
+  const cp=Math.min(1,Math.max(0,(p-.05)/.5));
+  arcGrow(W*.56,H*.48,190,accentColor,cp*1.2,1,.1);
+  arcGrow(W*.56,H*.48,240,accentColor,cp,1,.05);
+  /* floating glasses */
+  const fp=easeOut(Math.min(1,Math.max(0,(p-.06)/.45)));
+  const fy=Math.sin(t/800+idx)* 10;
+  ctx.save(); ctx.translate(W*.56+(1-fp)*-60, H*.48+fy);
+  glasses(0,0,fp*1.7,fp,INK,shape); ctx.restore();
+  /* text left */
+  const tp=Math.max(0,(p-.52)/.3);
+  /* category chip */
+  ctx.save(); ctx.globalAlpha=a*easeOut(Math.min(1,tp));
+  rr(52,165,Math.min(100,label.length*9+18),26,5);
+  ctx.fillStyle=accentColor; ctx.fill();
+  ctx.font="600 9px 'Outfit'"; ctx.fillStyle='#fff'; ctx.textAlign='center';
+  ctx.fillText(label.toUpperCase(),52+(Math.min(100,label.length*9+18)/2),183); ctx.restore();
+  revealText(label,52,245,"500 54px 'Playfair Display'",INK,tp);
+  revealText(copy,52,282,"400 14px 'Outfit'",MUTED,Math.max(0,tp-.1));
+  /* feature pills */
+  const pp=Math.max(0,(p-.77)/.2);
+  ['Premium','Curated','Manila clinic'].forEach((feat,i)=>{
+    const px=52+i*145;
+    ctx.save(); ctx.globalAlpha=a*easeOut(Math.min(1,Math.max(0,pp-i*.08)));
+    rr(px,316,132,28,5); ctx.fillStyle='#ddeaf8'; ctx.strokeStyle=accentColor;
+    ctx.lineWidth=1; ctx.fill(); ctx.stroke();
+    ctx.font="400 10px 'Outfit'"; ctx.fillStyle='#2e5f8c'; ctx.textAlign='center';
+    ctx.fillText(feat,px+66,334); ctx.restore();
+  });
+  ctx.restore();
+}
+
+/* ════════════════════════════════
+   SCENE 4  Clinic Dark Banner
+════════════════════════════════ */
+function s4(t,a){
+  if(a<=0)return;
+  ctx.save(); ctx.globalAlpha=a;
+  const g=ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'#152d44'); g.addColorStop(1,'#0e1e2e');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  dots.forEach(d=>{ d.tick(); d.draw(); });
+  const p=pt(4,t);
+  /* decorative rings */
+  arcGrow(W*.72,H*.4,280,'#22a3e0',Math.min(1,p*1.8),1,.05);
+  arcGrow(W*.72,H*.4,190,'#22a3e0',Math.min(1,p*1.5),1,.07);
+  /* floating cat-eye */
+  const fe=Math.max(0,(p-.08)/.4);
+  const fy2=Math.sin(t/720)*11;
+  ctx.save(); ctx.translate(W*.75,H*.4+fy2); ctx.globalAlpha=a*easeOut(Math.min(1,fe))*.45;
+  glasses(0,0,1.3,1,'#4aa3e0','cateye'); ctx.restore();
+  /* eyebrow */
+  lineGrow(58,126,86,126,'#22a3e0',Math.min(1,p*4),1.5);
+  revealText('A CLEARER EVERYDAY STARTS HERE',94,131,"500 9px 'Outfit'",'#8db3d0',Math.min(1,p*4));
+  /* headline */
+  const hp=Math.max(0,(p-.12)/.28);
+  revealText('Your neighborhood',58,198,"400 52px 'Playfair Display'",CREAM,hp);
+  revealText('optical clinic.',58,258,"italic 400 52px 'Playfair Display'",'#4aa3e0',Math.max(0,hp-.15));
+  revealText('Manila, Philippines',58,296,"400 13px 'Outfit'",'#6690b2',Math.max(0,(p-.45)/.2));
+  /* steps */
+  const steps=[
+    {n:'01',title:'Choose your eyewear',sub:'Browse frames, find your fit.'},
+    {n:'02',title:'We prepare your order',sub:'Our team handles billing.'},
+    {n:'03',title:'Pickup or delivery',sub:'Receive your new essential.'},
+  ];
+  steps.forEach((step,i)=>{
+    const sp=Math.max(0,(p-.5-i*.08)/.25);
+    const sx=58+i*284;
+    ctx.save(); ctx.globalAlpha=a*easeOut(Math.min(1,sp));
+    rr(sx,348,38,38,7); ctx.fillStyle='#22a3e015'; ctx.strokeStyle='#22a3e040'; ctx.lineWidth=1; ctx.fill(); ctx.stroke();
+    ctx.font="600 13px 'Outfit'"; ctx.fillStyle='#4aa3e0'; ctx.textAlign='center'; ctx.fillText(step.n,sx+19,372); ctx.restore();
+    revealText(step.title,sx,410,"600 13px 'Outfit'",'#b7cde2',Math.max(0,sp-.22));
+    revealText(step.sub,  sx,430,"400 10px 'Outfit'",'#6690b2',Math.max(0,sp-.32));
+  });
+  ctx.restore();
+}
+
+/* ════════════════════════════════
+   SCENE 5  CTA Outro
+════════════════════════════════ */
+function s5(t,a){
+  if(a<=0)return;
+  ctx.save(); ctx.globalAlpha=a;
+  const g=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,520);
+  g.addColorStop(0,'#ddeaf8'); g.addColorStop(1,'#c3d6ec');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  dots.forEach(d=>d.draw());
+  const p=pt(5,t);
+  /* circles */
+  arcGrow(W/2,H/2,215,TEAL,Math.min(1,p*2.2),1,.07);
+  arcGrow(W/2,H/2,165,TEAL,Math.min(1,p*1.8),1,.1);
+  arcGrow(W/2,H/2,115,TEAL,Math.min(1,p*1.5),1.5,.14);
+  /* 3 frames */
+  const positions=[[-235,-55],[0,82],[235,-30]];
+  const phases=[0,1.2,2.5];
+  const shapes=['round','cateye','rect'];
+  shapes.forEach((sh,i)=>{
+    const fp=Math.max(0,(p-.08-i*.07)/.4);
+    const fy=Math.sin(t/900+phases[i])*9;
+    ctx.save(); ctx.translate(W/2+positions[i][0], H/2+positions[i][1]+fy);
+    glasses(0,0,.88,easeOut(Math.min(1,fp))*.55,INK,sh); ctx.restore();
+  });
+  /* center headline */
+  const tp=Math.max(0,(p-.5)/.32);
+  revealText('See your world',W/2,H/2-30,"italic 400 58px 'Playfair Display'",INK,tp,'center');
+  revealText('differently.',W/2,H/2+28,"500 58px 'Playfair Display'",TEAL,Math.max(0,tp-.14),'center');
+  /* url */
+  const up=Math.max(0,(p-.79)/.18);
+  revealText('oneopticsclinic.com',W/2,H/2+76,"400 14px 'Outfit'",'#4a7099',up,'center');
+  /* logo */
+  const lp=Math.max(0,(p-.88)/.12);
+  revealText('ONE OPTICS CLINIC',W/2,H-38,"600 16px 'Outfit'",'#173049',lp,'center');
+  ctx.restore();
+}
+
+/* ════════════════════════════════
+   Main Loop
+════════════════════════════════ */
+function render(now){
+  if(!startTime) startTime=now;
+  const t=now-startTime;
+  if(t>DURATION+600){ stopAnim(); return; }
+
+  ctx.clearRect(0,0,W,H);
+  document.getElementById('progress').style.width=(Math.min(t,DURATION)/DURATION*100)+'%';
+
+  s0(t, fadeA(0,t,.16));
+  s1(t, fadeA(1,t,.12));
+  sFrame(t, fadeA(2,t,.12), 2,'round',   'Round',     'Soft curves, timeless appeal.',     '#173049');
+  sFrame(t, fadeA(3,t,.12), 3,'rect',    'Rectangle', 'Clean lines, everyday confidence.', '#1a6bb5');
+  s4(t, fadeA(4,t,.12));
+  s5(t, fadeA(5,t,.12));
+
+  /* cinematic bars */
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,20); ctx.fillRect(0,H-20,W,20);
+
+  /* timecode */
+  const ss=Math.floor(t/1000), ff=Math.floor((t%1000)/1000*30);
+  ctx.font="400 8px 'Outfit'"; ctx.fillStyle='#ffffff33'; ctx.textAlign='right';
+  ctx.fillText(`${String(ss).padStart(2,'0')}:${String(ff).padStart(2,'0')} / 00:25`,W-8,H-5);
+
+  animId=requestAnimationFrame(render);
+}
+
+function stopAnim(){ if(animId){cancelAnimationFrame(animId);animId=null;} }
+function playAnim(){ stopAnim(); startTime=null; animId=requestAnimationFrame(render); }
+
+/* ── MediaRecorder ── */
+let recorder=null, chunks=[];
+
+document.getElementById('btn-play').addEventListener('click', playAnim);
+document.getElementById('btn-record').addEventListener('click', ()=>{
+  if(recorder && recorder.state==='recording'){ recorder.stop(); return; }
+  const btn=document.getElementById('btn-record');
+  const status=document.getElementById('status');
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9' : 'video/webm';
+  const stream=canvas.captureStream(30);
+  recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:8_000_000});
+  chunks=[];
+  recorder.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
+  recorder.onstop=()=>{
+    const blob=new Blob(chunks,{type:'video/webm'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url;
+    a.download='one-optics-clinic-promo.webm'; a.click();
+    URL.revokeObjectURL(url);
+    btn.textContent='⏺ Record & Download';
+    btn.classList.remove('recording');
+    status.textContent='✓ Video downloaded! Convert to MP4 with Handbrake or ffmpeg.';
+  };
+  recorder.start(100);
+  btn.textContent='⏹ Stop & Save';
+  btn.classList.add('recording');
+  status.textContent='⏺ Recording… playing automatically for 25 seconds';
+  playAnim();
+  setTimeout(()=>{ if(recorder&&recorder.state==='recording') recorder.stop(); }, DURATION+300);
+});
+
+/* auto-play */
+setTimeout(playAnim, 400);
+</script>
+</body>
+</html>
