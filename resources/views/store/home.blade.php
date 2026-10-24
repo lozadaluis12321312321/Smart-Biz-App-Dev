@@ -28,7 +28,7 @@
     </button>
     <div class="story-modal-label">ONE OPTICS CLINIC &mdash; OUR STORY</div>
     <div class="story-iframe-wrap">
-      <video id="storyVideo" src="https://raw.githubusercontent.com/lozadaluis12321312321/Smart-Biz-App-Dev/main/public/assets/SmartBiz-Showreel-2026.mp4" controls playsinline preload="none" title="SmartBiz Showreel 2026" style="width:100%;height:100%;border-radius:10px;background:#000;"></video>
+      <iframe id="storyFrame" src="" title="SmartBiz Showreel 2026" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe>
     </div>
     <p class="story-modal-caption">SmartBiz Showreel 2026 &middot; Click anywhere outside to close &middot; Press <kbd>Esc</kbd> to exit</p>
   </div>
@@ -175,13 +175,13 @@
   const modal    = document.getElementById('storyModal');
   const backdrop = document.getElementById('storyBackdrop');
   const closeBtn = document.getElementById('storyClose');
-  const video    = document.getElementById('storyVideo');
+  const frame    = document.getElementById('storyFrame');
+  const videoSrc = 'https://www.youtube.com/embed/KbvTJ0Gzm2E?autoplay=1&rel=0';
 
   function openModal() {
     modal.hidden = false;
     requestAnimationFrame(() => modal.classList.add('is-open'));
-    video.currentTime = 0;
-    video.play();
+    frame.src = videoSrc;
     document.body.style.overflow = 'hidden';
     closeBtn.focus();
   }
@@ -189,11 +189,10 @@
   function closeModal() {
     modal.classList.remove('is-open');
     document.body.style.overflow = '';
-    video.pause();
-    video.currentTime = 0;
-    // Wait for transition then hide
+    // Wait for transition then hide and stop video
     modal.addEventListener('transitionend', function handler() {
       modal.hidden = true;
+      frame.src = '';
       modal.removeEventListener('transitionend', handler);
     });
     btn.focus();
