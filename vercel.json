@@ -10,6 +10,7 @@
   "routes": [
     { "src": "/(assets|media)/(.*)", "dest": "/$1/$2" },
     { "src": "/(favicon\\.ico|robots\\.txt)", "dest": "/$1" },
+    { "src": "/motion-graphics.html", "dest": "/motion-graphics.html" },
     { "src": "/(.*)", "dest": "/api/index.php" }
   ],
   "env": {
