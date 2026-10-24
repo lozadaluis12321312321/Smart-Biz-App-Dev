@@ -28,7 +28,7 @@
     </button>
     <div class="story-modal-label">ONE OPTICS CLINIC &mdash; OUR STORY</div>
     <div class="story-iframe-wrap">
-      <video id="storyVideo" src="{{ asset('assets/SmartBiz-Showreel-2026.mp4') }}" controls playsinline preload="none" title="SmartBiz Showreel 2026" style="width:100%;height:100%;border-radius:10px;background:#000;"></video>
+      <video id="storyVideo" src="https://raw.githubusercontent.com/lozadaluis12321312321/Smart-Biz-App-Dev/main/public/assets/SmartBiz-Showreel-2026.mp4" controls playsinline preload="none" title="SmartBiz Showreel 2026" style="width:100%;height:100%;border-radius:10px;background:#000;"></video>
     </div>
     <p class="story-modal-caption">SmartBiz Showreel 2026 &middot; Click anywhere outside to close &middot; Press <kbd>Esc</kbd> to exit</p>
   </div>

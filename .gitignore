@@ -32,3 +32,8 @@ Thumbs.db
 /storage/app/clinic-settings.json
 *.zip
 composer.phar
+# Large media files – host externally (e.g. GitHub Releases / CDN)
+*.mp4
+*.mov
+*.avi
+*.webm
